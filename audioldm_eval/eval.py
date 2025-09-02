@@ -14,12 +14,13 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 from skimage.metrics import structural_similarity as ssim
 from audioldm_eval.feature_extractors.panns import Cnn14
 from audioldm_eval.audio.tools import save_pickle, load_pickle, write_json, load_json
-from ssr_eval.metrics import AudioMetrics
+
+# from ssr_eval.metrics import AudioMetrics
 import audioldm_eval.audio as Audio
+
 
 class EvaluationHelper:
     def __init__(self, sampling_rate, device, backbone="mert") -> None:
-
         self.device = device
         self.backbone = backbone
         self.sampling_rate = sampling_rate
@@ -28,7 +29,7 @@ class EvaluationHelper:
             use_activation=False,
             verbose=True,
         )
-        
+
         # self.passt_model = get_basic_model(mode="logits")
         # self.passt_model.eval()
         # self.passt_model.to(self.device)
@@ -37,12 +38,18 @@ class EvaluationHelper:
         self.frechet.model = self.frechet.model.to(device)
 
         features_list = ["2048", "logits"]
-        
+
         if self.backbone == "mert":
-            self.mel_model = AutoModel.from_pretrained("m-a-p/MERT-v1-95M", trust_remote_code=True)
-            self.processor = Wav2Vec2FeatureExtractor.from_pretrained("m-a-p/MERT-v1-95M",trust_remote_code=True)
+            self.mel_model = AutoModel.from_pretrained(
+                "m-a-p/MERT-v1-95M", trust_remote_code=True
+            )
+            self.processor = Wav2Vec2FeatureExtractor.from_pretrained(
+                "m-a-p/MERT-v1-95M", trust_remote_code=True
+            )
             self.target_sample_rate = self.processor.sampling_rate
-            self.resampler = T.Resample(orig_freq=self.sampling_rate, new_freq=self.target_sample_rate).to(self.device)
+            self.resampler = T.Resample(
+                orig_freq=self.sampling_rate, new_freq=self.target_sample_rate
+            ).to(self.device)
         elif self.backbone == "cnn14":
             if self.sampling_rate == 16000:
                 self.mel_model = Cnn14(
@@ -102,7 +109,9 @@ class EvaluationHelper:
             generate_files_path, groundtruth_path, limit_num=limit_num
         )
 
-        metrics = self.calculate_metrics(generate_files_path, groundtruth_path, same_name, limit_num) # recalculate = True
+        metrics = self.calculate_metrics(
+            generate_files_path, groundtruth_path, same_name, limit_num
+        )  # recalculate = True
 
         return metrics
 
@@ -192,11 +201,22 @@ class EvaluationHelper:
                 print("Infinite value encountered in psnr %s " % filename)
                 continue
             psnr_avg.append(psnrval)
-            data_range = max(np.max(mel_gen), np.max(mel_target)) - min(np.min(mel_gen), np.min(mel_target))
+            data_range = max(np.max(mel_gen), np.max(mel_target)) - min(
+                np.min(mel_gen), np.min(mel_target)
+            )
             ssim_avg.append(ssim(mel_gen, mel_target, data_range=data_range))
         return {"psnr": np.mean(psnr_avg), "ssim": np.mean(ssim_avg)}
 
-    def calculate_metrics(self, generate_files_path, groundtruth_path, same_name, limit_num=None, calculate_psnr_ssim=False, calculate_lsd=False, recalculate=False):
+    def calculate_metrics(
+        self,
+        generate_files_path,
+        groundtruth_path,
+        same_name,
+        limit_num=None,
+        calculate_psnr_ssim=False,
+        calculate_lsd=False,
+        recalculate=False,
+    ):
         # Generation, target
         torch.manual_seed(0)
 
@@ -205,7 +225,7 @@ class EvaluationHelper:
         outputloader = DataLoader(
             WaveDataset(
                 generate_files_path,
-                self.sampling_rate, # TODO
+                self.sampling_rate,  # TODO
                 # 32000,
                 limit_num=limit_num,
             ),
@@ -217,7 +237,7 @@ class EvaluationHelper:
         resultloader = DataLoader(
             WaveDataset(
                 groundtruth_path,
-                self.sampling_rate, # TODO
+                self.sampling_rate,  # TODO
                 # 32000,
                 limit_num=limit_num,
             ),
@@ -230,26 +250,31 @@ class EvaluationHelper:
 
         # FAD
         ######################################################################################################################
-        if(recalculate): 
+        if recalculate:
             print("Calculate FAD score from scratch")
-        fad_score = self.frechet.score(generate_files_path, groundtruth_path, limit_num=limit_num, recalculate=recalculate)
+        fad_score = self.frechet.score(
+            generate_files_path,
+            groundtruth_path,
+            limit_num=limit_num,
+            recalculate=recalculate,
+        )
         out.update(fad_score)
         print("FAD: %s" % fad_score)
         ######################################################################################################################
-        
+
         # PANNs or PassT
         ######################################################################################################################
         cache_path = groundtruth_path + "classifier_logits_feature_cache.pkl"
-        if(os.path.exists(cache_path) and not recalculate):
+        if os.path.exists(cache_path) and not recalculate:
             print("reload", cache_path)
             featuresdict_2 = load_pickle(cache_path)
         else:
             print("Extracting features from %s." % groundtruth_path)
             featuresdict_2 = self.get_featuresdict(resultloader)
             save_pickle(featuresdict_2, cache_path)
-        
+
         cache_path = generate_files_path + "classifier_logits_feature_cache.pkl"
-        if(os.path.exists(cache_path) and not recalculate):
+        if os.path.exists(cache_path) and not recalculate:
             print("reload", cache_path)
             featuresdict_1 = load_pickle(cache_path)
         else:
@@ -260,7 +285,7 @@ class EvaluationHelper:
         metric_kl, kl_ref, paths_1 = calculate_kl(
             featuresdict_1, featuresdict_2, "logits", same_name
         )
-        
+
         out.update(metric_kl)
 
         metric_isc = calculate_isc(
@@ -272,7 +297,7 @@ class EvaluationHelper:
         )
         out.update(metric_isc)
 
-        if("2048" in featuresdict_1.keys() and "2048" in featuresdict_2.keys()):
+        if "2048" in featuresdict_1.keys() and "2048" in featuresdict_2.keys():
             metric_fid = calculate_fid(
                 featuresdict_1, featuresdict_2, feat_layer_name="2048"
             )
@@ -280,7 +305,7 @@ class EvaluationHelper:
 
         # Metrics for Autoencoder
         ######################################################################################################################
-        if(calculate_psnr_ssim or calculate_lsd):
+        if calculate_psnr_ssim or calculate_lsd:
             pairedloader = DataLoader(
                 MelPairedDataset(
                     generate_files_path,
@@ -295,13 +320,15 @@ class EvaluationHelper:
                 sampler=None,
                 num_workers=16,
             )
-            
-        if(calculate_lsd):
+
+        if calculate_lsd:
             metric_lsd = self.calculate_lsd(pairedloader, same_name=same_name)
             out.update(metric_lsd)
 
-        if(calculate_psnr_ssim):
-            metric_psnr_ssim = self.calculate_psnr_ssim(pairedloader, same_name=same_name)
+        if calculate_psnr_ssim:
+            metric_psnr_ssim = self.calculate_psnr_ssim(
+                pairedloader, same_name=same_name
+            )
             out.update(metric_psnr_ssim)
 
         # metric_kid = calculate_kid(
@@ -321,16 +348,16 @@ class EvaluationHelper:
         print("\n")
         print(limit_num)
         print(
-            f'KL_Sigmoid: {out.get("kullback_leibler_divergence_sigmoid", float("nan")):8.5f};',
-            f'KL: {out.get("kullback_leibler_divergence_softmax", float("nan")):8.5f};',
-            f'PSNR: {out.get("psnr", float("nan")):.5f}',
-            f'SSIM: {out.get("ssim", float("nan")):.5f}',
-            f'ISc: {out.get("inception_score_mean", float("nan")):8.5f} ({out.get("inception_score_std", float("nan")):5f});',
-            f'KID: {out.get("kernel_inception_distance_mean", float("nan")):.5f}',
-            f'({out.get("kernel_inception_distance_std", float("nan")):.5f})',
-            f'FD: {out.get("frechet_distance", float("nan")):8.5f};',
-            f'FAD: {out.get("frechet_audio_distance", float("nan")):.5f}',
-            f'LSD: {out.get("lsd", float("nan")):.5f}',
+            f"KL_Sigmoid: {out.get('kullback_leibler_divergence_sigmoid', float('nan')):8.5f};",
+            f"KL: {out.get('kullback_leibler_divergence_softmax', float('nan')):8.5f};",
+            f"PSNR: {out.get('psnr', float('nan')):.5f}",
+            f"SSIM: {out.get('ssim', float('nan')):.5f}",
+            f"ISc: {out.get('inception_score_mean', float('nan')):8.5f} ({out.get('inception_score_std', float('nan')):5f});",
+            f"KID: {out.get('kernel_inception_distance_mean', float('nan')):.5f}",
+            f"({out.get('kernel_inception_distance_std', float('nan')):.5f})",
+            f"FD: {out.get('frechet_distance', float('nan')):8.5f};",
+            f"FAD: {out.get('frechet_audio_distance', float('nan')):.5f}",
+            f"LSD: {out.get('lsd', float('nan')):.5f}",
             # f'SSIM_STFT: {out.get("ssim_stft", float("nan")):.5f}',
         )
         result = {
@@ -356,7 +383,13 @@ class EvaluationHelper:
             ),
         }
 
-        json_path = os.path.join(os.path.dirname(generate_files_path), self.get_current_time()+"_"+os.path.basename(generate_files_path) + ".json")
+        json_path = os.path.join(
+            os.path.dirname(generate_files_path),
+            self.get_current_time()
+            + "_"
+            + os.path.basename(generate_files_path)
+            + ".json",
+        )
         write_json(result, json_path)
         return result
 
@@ -390,10 +423,21 @@ class EvaluationHelper:
                 with torch.no_grad():
                     if self.backbone == "mert":
                         waveform = self.resampler(waveform[0])
-                        mert_input = self.processor(waveform, sampling_rate=self.target_sample_rate, return_tensors="pt").to(self.device)
-                        mert_output = self.mel_model(**mert_input, output_hidden_states=True)
-                        time_reduced_hidden_states = torch.stack(mert_output.hidden_states).squeeze().mean(dim=1)
-                        featuresdict = {"2048": time_reduced_hidden_states.cpu(), "logits": time_reduced_hidden_states.cpu()}
+                        mert_input = self.processor(
+                            waveform,
+                            sampling_rate=self.target_sample_rate,
+                            return_tensors="pt",
+                        ).to(self.device)
+                        mert_output = self.mel_model(
+                            **mert_input, output_hidden_states=True
+                        )
+                        time_reduced_hidden_states = (
+                            torch.stack(mert_output.hidden_states).squeeze().mean(dim=1)
+                        )
+                        featuresdict = {
+                            "2048": time_reduced_hidden_states.cpu(),
+                            "logits": time_reduced_hidden_states.cpu(),
+                        }
                     elif self.backbone == "cnn14":
                         featuresdict = self.mel_model(waveform)
 
