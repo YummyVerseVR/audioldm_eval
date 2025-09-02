@@ -2,7 +2,7 @@
 # -*- encoding: utf-8 -*-
 # python3 setup.py sdist bdist_wheel
 """
-@File    :   setup.py.py    
+@File    :   setup.py.py
 @Contact :   haoheliu@gmail.com
 @License :   (C)Copyright 2020-2100
 
@@ -43,7 +43,7 @@ REQUIRED = [
     "absl-py",
     "scipy",
     "tqdm",
-    "ssr_eval",
+    # "ssr_eval",
     "librosa",
 ]
 
