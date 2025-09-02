@@ -1,0 +1,3 @@
+[submodule "src/hear21passt"]
+	path = src/hear21passt
+	url = https://github.com/haoheliu/passt_hear21.git
